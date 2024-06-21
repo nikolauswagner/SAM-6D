@@ -1,4 +1,3 @@
-import os, sys
 import numpy as np
 import shutil
 from tqdm import tqdm
@@ -6,8 +5,7 @@ import time
 import torch
 from PIL import Image
 import logging
-import os, sys
-import os.path as osp
+import os
 from hydra import initialize, compose
 # set level logging
 logging.basicConfig(level=logging.INFO)
@@ -17,9 +15,7 @@ import numpy as np
 from hydra.utils import instantiate
 import argparse
 import glob
-from omegaconf import DictConfig, OmegaConf
-from torchvision.utils import save_image
-import torchvision.transforms as T
+from omegaconf import OmegaConf
 import cv2
 import imageio
 import distinctipy
@@ -27,20 +23,11 @@ from skimage.feature import canny
 from skimage.morphology import binary_dilation
 from segment_anything.utils.amg import rle_to_mask
 
-from utils.poses.pose_utils import get_obj_poses_from_template_level, load_index_level_in_level2
-from utils.bbox_utils import CropResizePad
-from model.utils import Detections, convert_npz_to_json
-from model.loss import Similarity
-from utils.inout import load_json, save_json_bop23
+from Instance_Segmentation_Model.utils.poses.pose_utils import get_obj_poses_from_template_level, load_index_level_in_level2
+from Instance_Segmentation_Model.utils.bbox_utils import CropResizePad
+from Instance_Segmentation_Model.model.utils import Detections, convert_npz_to_json
+from Instance_Segmentation_Model.utils.inout import load_json, save_json_bop23
 
-inv_rgb_transform = T.Compose(
-        [
-            T.Normalize(
-                mean=[-0.485 / 0.229, -0.456 / 0.224, -0.406 / 0.225],
-                std=[1 / 0.229, 1 / 0.224, 1 / 0.225],
-            ),
-        ]
-    )
 
 def visualize(rgb, detections, save_path="tmp.png"):
     img = rgb.copy()
@@ -123,7 +110,7 @@ def run_inference(segmentor_model, output_dir, cad_path, rgb_path, depth_path, c
         
     
     logging.info("Initializing template")
-    template_dir = os.path.join(output_dir, 'templates')
+    template_dir = os.path.join(output_dir, 'templates/013_apple')
     num_templates = len(glob.glob(f"{template_dir}/*.npy"))
     boxes, masks, templates = [], [], []
     for idx in range(num_templates):
