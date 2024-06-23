@@ -167,27 +167,27 @@ class SAM6DRunner(object):
       templates.append(image)
       masks.append(mask.unsqueeze(-1))
 
-    for idx in range(num_templates):
-      image = Image.open(os.path.join(template_dir + "/../002_master_chef_can", 'rgb_'+str(idx)+'.png'))
-      mask = Image.open(os.path.join(template_dir + "/../002_master_chef_can", 'mask_'+str(idx)+'.png'))
-      boxes.append(mask.getbbox())
-
-      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
-      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
-      image = image * mask[:, :, None]
-      templates.append(image)
-      masks.append(mask.unsqueeze(-1))
-
-    for idx in range(num_templates):
-      image = Image.open(os.path.join(template_dir + "/../003_cracker_box", 'rgb_'+str(idx)+'.png'))
-      mask = Image.open(os.path.join(template_dir + "/../003_cracker_box", 'mask_'+str(idx)+'.png'))
-      boxes.append(mask.getbbox())
-
-      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
-      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
-      image = image * mask[:, :, None]
-      templates.append(image)
-      masks.append(mask.unsqueeze(-1))
+#    for idx in range(num_templates):
+#      image = Image.open(os.path.join(template_dir + "/../002_master_chef_can", 'rgb_'+str(idx)+'.png'))
+#      mask = Image.open(os.path.join(template_dir + "/../002_master_chef_can", 'mask_'+str(idx)+'.png'))
+#      boxes.append(mask.getbbox())
+#
+#      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
+#      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
+#      image = image * mask[:, :, None]
+#      templates.append(image)
+#      masks.append(mask.unsqueeze(-1))
+#
+#    for idx in range(num_templates):
+#      image = Image.open(os.path.join(template_dir + "/../003_cracker_box", 'rgb_'+str(idx)+'.png'))
+#      mask = Image.open(os.path.join(template_dir + "/../003_cracker_box", 'mask_'+str(idx)+'.png'))
+#      boxes.append(mask.getbbox())
+#
+#      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
+#      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
+#      image = image * mask[:, :, None]
+#      templates.append(image)
+#      masks.append(mask.unsqueeze(-1))
 
     templates = torch.stack(templates).permute(0, 3, 1, 2)
     masks = torch.stack(masks).permute(0, 3, 1, 2)
@@ -197,6 +197,15 @@ class SAM6DRunner(object):
     proposal_processor = CropResizePad(processing_config.image_size)
     self.templates_ism = proposal_processor(images=templates, boxes=boxes).to(self.device)
     self.masks_cropped_ism = proposal_processor(images=masks, boxes=boxes).to(self.device)
+
+    # Compute features
+    self.model_ism.ref_data = {}
+    self.model_ism.ref_data["descriptors"] = self.model_ism.descriptor_model.compute_features(
+                    self.templates_ism, token_name="x_norm_clstoken"
+                ).unsqueeze(0).data
+    self.model_ism.ref_data["appe_descriptors"] = self.model_ism.descriptor_model.compute_masked_patch_feature(
+                    self.templates_ism, self.masks_cropped_ism[:, 0, :, :]
+                ).unsqueeze(0).data
 
   def load_templates_pose_estimation(self, obj_name="001_chips_can"):
     self.all_tem = []
@@ -266,13 +275,6 @@ class SAM6DRunner(object):
     gorilla.solver.load_checkpoint(model=self.model_posest, filename=checkpoint)
 
   def detect_object(self, img):
-    self.model_ism.ref_data = {}
-    self.model_ism.ref_data["descriptors"] = self.model_ism.descriptor_model.compute_features(
-                    self.templates_ism, token_name="x_norm_clstoken"
-                ).unsqueeze(0).data
-    self.model_ism.ref_data["appe_descriptors"] = self.model_ism.descriptor_model.compute_masked_patch_feature(
-                    self.templates_ism, self.masks_cropped_ism[:, 0, :, :]
-                ).unsqueeze(0).data
     
     # run inference
     print(time.time())
@@ -290,6 +292,7 @@ class SAM6DRunner(object):
         semantic_score,
         best_template,
     ) = self.model_ism.compute_semantic_score(query_decriptors)
+    print(pred_idx_objects)
 
     # Update detection
     detections.filter(idx_selected_proposals)
@@ -308,8 +311,7 @@ class SAM6DRunner(object):
 
     model_points = self.mesh.sample(2048).astype(np.float32) / 1000.0
     self.model_ism.ref_data["pointcloud"] = torch.tensor(model_points).unsqueeze(0).data.to(self.device)
-
-    print(best_template, pred_idx_objects, batch, detections.masks)    
+ 
     image_uv = self.model_ism.project_template_to_image(best_template, pred_idx_objects, batch, detections.masks)
 
     geometric_score, visible_ratio = self.model_ism.compute_geometric_score(
