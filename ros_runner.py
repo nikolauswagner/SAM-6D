@@ -40,7 +40,7 @@ from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 #from tf import TransformListener
 from std_msgs.msg import Header, String
-from sensor_msgs.msg import PointField
+from sensor_msgs.msg import PointCloud2, PointField
 import sensor_msgs.point_cloud2 as pc2
 from pick_up_object.srv import DetectObjects, DetectObjectsResponse
 
@@ -212,8 +212,9 @@ class SAM6DRunner(object):
     self.ism_type = ism_type
     self.cam_manager = cam_manager
 
-    # Debug
+    # Visualisation
     self.pub_vis_seg = rospy.Publisher("/object_detector/vis/segmentation", Image, queue_size=10)
+    self.pub_vis_pcl = rospy.Publisher("/object_detector/vis/pcl", PointCloud2, queue_size=10)
 
     #self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/Data/Example/camera.json")
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -257,6 +258,7 @@ class SAM6DRunner(object):
                                          self.cam_manager.rgb_info)
         # TODO: remove 0-points
         resp.object_clouds.append(masked_pcl)
+        self.pub_vis_pcl.publish(masked_pcl)
 
         img_mask[masks[idx][0] != 0] = self.cam_manager.rgb
 
