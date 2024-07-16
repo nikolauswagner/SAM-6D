@@ -204,7 +204,7 @@ class SAM6DRunner(object):
     print("Initialising SAM-6D took {:.3f}s.".format(time_1 - time_0))
 
   def run(self, fq=10.0):
-    rospy.Timer(rospy.Duration(1.0 / fq), self.detect_object)
+    rospy.Timer(rospy.Duration(1.0 / fq), self.detect_objects)
     #rospy.Timer(rospy.Duration(1.0 / fq), self.convert_rgbd_to_pc2)
 
   def convert_rgbd_to_pc2(self, event=None):
