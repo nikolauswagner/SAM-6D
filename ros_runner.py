@@ -245,25 +245,22 @@ class SAM6DRunner(object):
     masks, scores, templates = self.detect_objects(self.cam_manager.rgb)
 
     resp = DetectObjectsResponse()
-    img_mask = None
+    img_mask = np.zeros_like(self.cam_manager.rgb)
     for idx, score in enumerate(scores):
       if score > 0.5:
         resp.scores.append(score)
         resp.labels_text.append(String(obj_names[templates[idx] // 42]))
-        masked_depth = np.zeros_like(self.cam_manager.depth)
-        masked_depth = self.cam_manager.depth[masks[idx][0] != 0]
+        masked_depth = np.copy(self.cam_manager.depth)
+        masked_depth[masks[idx][0] == 0] = 0
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
         # TODO: remove 0-points
         resp.object_clouds.append(masked_pcl)
 
-        if img_mask is None:
-          img_mask = masks[idx][0]
-        else:
-          img_mask += masks[idx][0]
+        img_mask[masks[idx][0] != 0] = self.cam_manager.rgb
 
-    color_msg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
+    color_msg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="rgb8")
     self.pub_vis_seg.publish(color_msg)
 
     resp.full_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
