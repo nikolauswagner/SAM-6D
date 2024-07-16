@@ -58,31 +58,31 @@ obj_names = ["001_soap",
              "012_cornflakes",
              "013_pea_soup",
              "014_curry",
-             "015_pancake_mix",
-             "016_hagelslag",
-             "017_sausages",
-             "018_mayonaise",
-             "019_candle",
-             "020_pear",
-             "021_plum",
-             "022_peach",
-             "023_lemon",
-             "024_orange",
-             "025_strawberry",
-             "026_banana",
-             "027_apple",
-             "028_stroopwafel",
-             "029_candy",
-             "030_liquorice",
-             "031_crisps",
-             "032_pringles",
-             "033_tictac",
-             "034_spoon",
-             "035_plate",
-             "036_cup",
-             "037_fork",
-             "038_bowl",
-             "039_knife"]
+             "015_pancake_mix"]
+#             "016_hagelslag",
+#             "017_sausages",
+#             "018_mayonaise",
+#             "019_candle",
+#             "020_pear",
+#             "021_plum",
+#             "022_peach",
+#             "023_lemon",
+#             "024_orange",
+#             "025_strawberry",
+#             "026_banana",
+#             "027_apple",
+#             "028_stroopwafel",
+#             "029_candy",
+#             "030_liquorice",
+#             "031_crisps",
+#             "032_pringles",
+#             "033_tictac",
+#             "034_spoon",
+#             "035_plate",
+#             "036_cup",
+#             "037_fork",
+#             "038_bowl",
+#             "039_knife"]
 
 rgb_transform = T.Compose([T.ToTensor(),
                           T.Normalize(mean=[0.485, 0.456, 0.406],
@@ -189,10 +189,10 @@ def convert_rgbd_to_pc2(rgb, depth, camera_info):
                                                  cx=camera_info.K[2],
                                                  cy=camera_info.K[5])
   pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics)
-  pcd.transform([[1,  0,  0, 0], 
-                 [0, -1,  0, 0], 
-                 [0,  0, -1, 0], 
-                 [0,  0,  0, 1]])
+#  pcd.transform([[1,  0,  0, 0], 
+#                 [0, -1,  0, 0], 
+#                 [0,  0, -1, 0], 
+#                 [0,  0,  0, 1]])
   pc2_ros = o3d_to_pc2(pcd)
   print("pc2 done")
   return pc2_ros
@@ -214,6 +214,7 @@ class SAM6DRunner(object):
 
     # Visualisation
     self.pub_vis_seg = rospy.Publisher("/object_detector/vis/segmentation", Image, queue_size=10)
+    self.pub_vis_idx = rospy.Publisher("/object_detector/vis/index", Image, queue_size=10)
     self.pub_vis_pcl = rospy.Publisher("/object_detector/vis/pcl", PointCloud2, queue_size=10)
 
     #self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/Data/Example/camera.json")
@@ -247,6 +248,7 @@ class SAM6DRunner(object):
 
     resp = DetectObjectsResponse()
     img_mask = np.zeros_like(self.cam_manager.rgb)
+    img_idx = np.zeros_like(self.cam_manager.depth)
     for idx, score in enumerate(scores):
       if score > 0.5:
         resp.scores.append(score)
@@ -260,10 +262,13 @@ class SAM6DRunner(object):
         resp.object_clouds.append(masked_pcl)
         self.pub_vis_pcl.publish(masked_pcl)
 
-        img_mask[masks[idx][0] != 0] = self.cam_manager.rgb
+        img_mask[masks[idx][0] != 0] = self.cam_manager.rgb[masks[idx][0] != 0]
+        img_idx[masks[idx][0] != 0] = idx
 
-    color_msg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="rgb8")
-    self.pub_vis_seg.publish(color_msg)
+    msg_seg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
+    self.pub_vis_seg.publish(msg_seg)
+    msg_idx = cv2.applyColorMap(img_idx, cv2.COLORMAP_JET)
+    self.pub_vis_idx.publish(msg_idx)
 
     resp.full_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                         self.cam_manager.depth,
