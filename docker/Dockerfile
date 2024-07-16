@@ -48,11 +48,12 @@ RUN pip3 uninstall -y torch torchvision
 RUN pip3 install torch torchvision --index-url https://download.pytorch.org/whl/cu118
 RUN DEBIAN_FRONTEND=noninteractive apt install -y ros-${ROS_DISTRO}-tf
 RUN pip3 install ninja
+RUN pip install open3d
 
-RUN git clone https://github.com/nikolauswagner/SAM-6D.git
-WORKDIR /SAM-6D/Pose_Estimation_Model/model/pointnet2
-RUN python3 setup.py install
-RUN ls /
+#RUN git clone https://github.com/nikolauswagner/SAM-6D.git
+#WORKDIR /SAM-6D/Pose_Estimation_Model/model/pointnet2
+#RUN python3 setup.py install
+#RUN ls /
 
 COPY entrypoint.sh /entrypoint.sh
 ENTRYPOINT ["/bin/bash", "/entrypoint.sh"]

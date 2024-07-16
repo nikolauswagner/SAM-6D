@@ -4,6 +4,7 @@ import numpy as np
 import torch
 import torchvision.transforms as T
 from PIL import Image
+import open3d as o3d
 #from hydra import initialize, compose
 #from hydra.utils import instantiate
 import hydra
@@ -33,39 +34,50 @@ from Instance_Segmentation_Model.utils.inout import load_json, save_json_bop23
 
 from Pose_Estimation_Model.utils.data_utils import load_im, get_bbox, get_point_cloud_from_depth, get_resize_rgb_choose
 
-obj_names = [ "001_chips_can",
-              "002_master_chef_can",
-              "003_cracker_box",
-              "004_sugar_box",
-              "005_tomato_soup_can",
-              "006_mustard_bottle",
-              "007_tuna_fish_can",
-              "008_pudding_box",
-              "009_gelatin_box",
-              "010_potted_meat_can",
-              "011_banana",
-              "012_strawberry",
-              "013_apple",
-              "014_lemon",
-              "015_peach",
-              "016_pear",
-              "017_orange",
-              "018_plum",
-              "021_bleach_cleanser",
-              "024_bowl",
-              "025_mug",
-              "029_plate",
-              "030_fork",
-              "031_spoon",
-              "032_knife",
-              "053_mini_soccer_ball",
-              "054_softball",
-              "055_baseball",
-              "056_tennis_ball",
-              "057_racquetball",
-              "058_golf_ball",
-              "062_dice",
-              "077_rubiks_cube"]
+# ROS
+from std_msgs.msg import Header
+from sensor_msgs.msg import PointCloud2, PointField
+import sensor_msgs.point_cloud2 as pc2
+
+obj_names = ["001_soap",
+             "002_dishwasher_tab",
+             "003_washcloth",
+             "004_sponge",
+             "005_cola",
+             "006_ice_tea",
+             "007_water",
+             "008_milk",
+             "009_big_coke",
+             "010_fanta",
+             "011_dubbelfris",
+             "012_cornflakes",
+             "013_pea_soup",
+             "014_curry",
+             "015_pancake_mix",
+             "016_hagelslag",
+             "017_sausages",
+             "018_mayonaise",
+             "019_candle",
+             "020_pear",
+             "021_plum",
+             "022_peach",
+             "023_lemon",
+             "024_orange",
+             "025_strawberry",
+             "026_banana",
+             "027_apple",
+             "028_stroopwafel",
+             "029_candy",
+             "030_liquorice",
+             "031_crisps",
+             "032_pringles",
+             "033_tictac",
+             "034_spoon",
+             "035_plate",
+             "036_cup",
+             "037_fork",
+             "038_bowl",
+             "039_knife"]
 
 rgb_transform = T.Compose([T.ToTensor(),
                           T.Normalize(mean=[0.485, 0.456, 0.406],
@@ -122,6 +134,44 @@ def visualize_ism(rgb, detections, save_path="tmp.png"):
     return concat
 
 
+def o3d_to_pc2(open3d_cloud, frame_id="xtion_rgb_optical_frame"):
+  FIELDS_XYZ = [
+    PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+    PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+    PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
+  ]
+  FIELDS_XYZRGB = FIELDS_XYZ + [PointField(name='rgb', offset=12, datatype=PointField.UINT32, count=1)]
+
+  # Bit operations
+  BIT_MOVE_16 = 2**16
+  BIT_MOVE_8 = 2**8
+
+  # Set "header"
+  header = Header()
+  header.stamp = rospy.Time.now()
+  header.frame_id = frame_id
+
+  # Set "fields" and "cloud_data"
+  points = np.asarray(open3d_cloud.points)
+  if not open3d_cloud.colors:  # XYZ only
+    fields = FIELDS_XYZ
+    cloud_data = points.tolist()
+  else:  # XYZ + RGB
+    fields = FIELDS_XYZRGB
+    # -- Change rgb color from "three float" to "one 24-byte int"
+    # 0x00FFFFFF is white, 0x00000000 is black.
+    colors = np.floor(np.asarray(open3d_cloud.colors)*255).astype("uint32")  # nx3 matrix
+    colors = colors[:, 0] * BIT_MOVE_16 + colors[:, 1] * BIT_MOVE_8 + colors[:,2]  
+    points = points.tolist()
+    colors = colors.tolist()
+    cloud_data = []
+    for i in range(len(points)):
+      cloud_data.append(points[i] + [colors[i]])
+  
+  # create ros_cloud
+  return pc2.create_cloud(header, fields, cloud_data)
+
+
 class SAM6DRunner(object):
 
   def __init__(self, 
@@ -143,18 +193,42 @@ class SAM6DRunner(object):
     self.templates = []
 
     # Load models
-    self.load_model_segmentation()
-    self.load_model_pose_estimation()
+    #self.load_model_segmentation()
+    #self.load_model_pose_estimation()
 
     # Load data
-    self.load_templates_segmentation()
-    self.load_templates_pose_estimation()
-    self.load_cad_models()
+    #self.load_templates_segmentation()
+    #self.load_templates_pose_estimation()
+    #self.load_cad_models()
     time_1 = time.time()
     print("Initialising SAM-6D took {:.3f}s.".format(time_1 - time_0))
 
   def run(self, fq=10.0):
-    rospy.Timer(rospy.Duration(1.0 / fq), self.detect_object)
+    #rospy.Timer(rospy.Duration(1.0 / fq), self.detect_object)
+    rospy.Timer(rospy.Duration(1.0 / fq), self.convert_rgbd_to_pc2)
+
+  def convert_rgbd_to_pc2(self, event=None):
+    if not self.cam_manager.ready():
+      print("Not ready!")
+      return
+
+    rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d.geometry.Image(self.cam_manager.rgb),
+                                                              o3d.geometry.Image(self.cam_manager.depth),
+                                                              convert_rgb_to_intensity=False)
+    intrinsics = o3d.camera.PinholeCameraIntrinsic(width=self.cam_manager.rgb_info.width,
+                                                   height=self.cam_manager.rgb_info.height,
+                                                   fx=self.cam_manager.rgb_info.K[0],
+                                                   fy=self.cam_manager.rgb_info.K[4],
+                                                   cx=self.cam_manager.rgb_info.K[2],
+                                                   cy=self.cam_manager.rgb_info.K[5])
+    pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics)
+    pcd.transform([[1,  0,  0, 0], 
+                   [0, -1,  0, 0], 
+                   [0,  0, -1, 0], 
+                   [0,  0,  0, 1]])
+    pc2_ros = o3d_to_pc2(pcd)
+    print("pc2 done")
+    return pc2_ros
 
   def load_cad_models(self):
     self.mesh = trimesh.load_mesh(self.cad_dir + "001_chips_can" + "/textured.obj")
@@ -264,7 +338,7 @@ class SAM6DRunner(object):
     checkpoint = "./Pose_Estimation_Model/checkpoints/sam-6d-pem-base.pth"
     gorilla.solver.load_checkpoint(model=self.model_posest, filename=checkpoint)
 
-  def detect_objects(self):
+  def detect_objects(self, event=None):
     if self.cam_manager.rgb is None:
       rospy.logwarn("No images received!")
       return
@@ -340,6 +414,11 @@ class SAM6DRunner(object):
 #    save_json_bop23(save_path+".json", self.detections)
 #    vis_img = visualize_ism(img, detections, "/home/niko/Documents/data/ycb/sam6d_results/vis_ism.png")
     #vis_img.save("/home/niko/Documents/data/ycb/sam6d_results//vis_ism.png")
+    
+    # Publish
+
+
+
     print("\n\n\n")
 
   def detect_pose(self, det_score_thresh=0.2):
@@ -439,6 +518,8 @@ class CameraManager():
   def __init__(self, ns_rgb, ns_depth=""):
     self.rgb = None
     self.depth = None
+    self.rgb_info = None
+    self.depth_info = None
     #rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_img, queue_size=1, buff_size=1)
     self.sub_rgb = rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_rgb, queue_size=1)
     self.sub_rgb_info = rospy.Subscriber("{:s}/camera_info".format(ns_rgb), CameraInfo, self.cb_rgb_info, queue_size=1)
@@ -448,6 +529,12 @@ class CameraManager():
 
     self.tf_listener = TransformListener()
     self.bridge = CvBridge()
+
+  def ready(self):
+    return not (self.rgb is None or 
+                self.depth is None or 
+                self.rgb_info is None or 
+                self.depth_info is None)
 
   def cb_rgb(self, msg):
     rgb = msg
@@ -460,23 +547,24 @@ class CameraManager():
     self.rgb_info = data
 
   def cb_depth(self, img_msg):
-    self.depth_img = self.bridge.imgmsg_to_cv2(img_msg, img_msg.encoding)
+    self.depth = self.bridge.imgmsg_to_cv2(img_msg, img_msg.encoding)
     #cv2.imshow("depth", self.depth_img/10)
     #cv2.waitKey()
 
   def cb_depth_info(self, data):
-    self.cam_depth_info = data
+    self.depth_info = data
 
 
 if __name__ == '__main__':
   rospy.init_node("sam6d")
   cm = CameraManager("/xtion/rgb", "/xtion/depth_registered")
   s6d = SAM6DRunner(cam_manager=cm)
-  img = Image.open("/home/niko/Documents/data/robocup/table.png").convert("RGB")
+  s6d.run()
+  #img = Image.open("/home/niko/Documents/data/robocup/table.png").convert("RGB")
   
   rospy.spin()
-  while not rospy.is_shutdown():
-    if cm.rgb is not None:
-      s6d.detect_object(cm.rgb)
+  #while not rospy.is_shutdown():
+    #if cm.rgb is not None:
+    #  s6d.detect_object(cm.rgb)
 
   print("All done")
