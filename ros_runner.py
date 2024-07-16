@@ -247,7 +247,7 @@ class SAM6DRunner(object):
         resp.scores.append(score)
         resp.labels_text.append(String(obj_names[templates[idx] // 42]))
         masked_depth = np.zeros_like(self.cam_manager.depth)
-        masked_depth = self.cam_manager.depth[masks[idx] != 0]
+        masked_depth = self.cam_manager.depth[masks[idx][0] != 0]
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
