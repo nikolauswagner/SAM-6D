@@ -248,7 +248,7 @@ class SAM6DRunner(object):
 
     resp = DetectObjectsResponse()
     img_mask = np.zeros_like(self.cam_manager.rgb)
-    img_idx = np.zeros_like(self.cam_manager.depth)
+    img_idx = np.zeros_like(self.cam_manager.depth, dtype=np.uint8)
     for idx, score in enumerate(scores):
       if score > 0.5:
         resp.scores.append(score)
@@ -267,8 +267,8 @@ class SAM6DRunner(object):
 
     msg_seg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
     self.pub_vis_seg.publish(msg_seg)
-    msg_idx = cv2.applyColorMap(img_idx.astype(np.uint8), cv2.COLORMAP_JET)
-    msg_idx = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
+    msg_idx = cv2.applyColorMap(img_idx, cv2.COLORMAP_JET)
+    msg_idx = self.cam_manager.bridge.cv2_to_imgmsg(img_idx, encoding="bgr8")
     self.pub_vis_idx.publish(msg_idx)
 
     resp.full_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
