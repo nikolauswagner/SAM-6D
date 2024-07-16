@@ -276,7 +276,7 @@ class SAM6DRunner(object):
   def run(self, fq=10.0):
     #rospy.Timer(rospy.Duration(1.0 / fq), self.detect_objects)
     #rospy.Timer(rospy.Duration(1.0 / fq), self.convert_rgbd_to_pc2)
-    self.srv_detect_objects = rospy.Service("detect_objects", DetectObjects, self.handler_detect_objects)
+    self.srv_detect_objects = rospy.Service("/sam6d/detect_objects", DetectObjects, self.handler_detect_objects)
 
   def handler_detect_objects(self, req):
     if not self.cam_manager.ready():
