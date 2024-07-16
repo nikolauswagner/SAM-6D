@@ -35,9 +35,14 @@ from Instance_Segmentation_Model.utils.inout import load_json, save_json_bop23
 from Pose_Estimation_Model.utils.data_utils import load_im, get_bbox, get_point_cloud_from_depth, get_resize_rgb_choose
 
 # ROS
+import rospy
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+from tf import TransformListener
 from std_msgs.msg import Header
-from sensor_msgs.msg import PointCloud2, PointField
+from sensor_msgs.msg import PointField
 import sensor_msgs.point_cloud2 as pc2
+from pick_up_object.srv import DetectObjects, DetectObjectsResponse
 
 obj_names = ["001_soap",
              "002_dishwasher_tab",
@@ -94,6 +99,7 @@ def batch_input_data(depth_path, cam_info, device):
     batch["cam_intrinsic"] = torch.from_numpy(cam_K).unsqueeze(0).to(device)
     batch['depth_scale'] = torch.from_numpy(depth_scale).unsqueeze(0).to(device)
     return batch
+
 
 def visualize_ism(rgb, detections, save_path="tmp.png"):
     img = rgb.copy()
@@ -204,8 +210,36 @@ class SAM6DRunner(object):
     print("Initialising SAM-6D took {:.3f}s.".format(time_1 - time_0))
 
   def run(self, fq=10.0):
-    rospy.Timer(rospy.Duration(1.0 / fq), self.detect_objects)
+    #rospy.Timer(rospy.Duration(1.0 / fq), self.detect_objects)
     #rospy.Timer(rospy.Duration(1.0 / fq), self.convert_rgbd_to_pc2)
+    self.srv_detect_objects = rospy.Service("detect_objects", DetectObjects, self.handler_detect_objects)
+
+  def handler_detect_objects(self, req):
+    if not self.cam_manager.ready():
+      rospy.logwarn("No images received!")
+      return
+
+    detections, scores, templates = self.detect_objects(self.cam_manager.rgb)
+
+    resp = DetectObjectsResponse()
+    for idx, score in enumerate(scores):
+      if score > 0.5:
+        resp.scores.append(score)
+        resp.labels_text.append(obj_names[templates[idx] // 42])
+
+    return resp
+
+#    maskimg = None
+#    for idx, score in enumerate(scores):
+#      if score > 0.5:
+#        print(score)
+#        print(obj_names[templates[idx] // 42])
+#        if maskimg is None:
+#          maskimg = detections.masks.cpu().numpy()[idx][0]
+#        else:
+#          maskimg += detections.masks.cpu().numpy()[idx][0]
+#    cv2.imshow("maskimg", maskimg)
+#    cv2.waitKey()
 
   def convert_rgbd_to_pc2(self, event=None):
     if not self.cam_manager.ready():
@@ -262,7 +296,7 @@ class SAM6DRunner(object):
     self.templates_ism = proposal_processor(images=templates, boxes=boxes).to(self.device)
     self.masks_cropped_ism = proposal_processor(images=masks, boxes=boxes).to(self.device)
 
-    # Compute features
+    print("Computing features...")
     self.model_ism.ref_data = {}
     self.model_ism.ref_data["descriptors"] = self.model_ism.descriptor_model.compute_features(
                     self.templates_ism, token_name="x_norm_clstoken"
@@ -338,13 +372,7 @@ class SAM6DRunner(object):
     checkpoint = "./Pose_Estimation_Model/checkpoints/sam-6d-pem-base.pth"
     gorilla.solver.load_checkpoint(model=self.model_posest, filename=checkpoint)
 
-  def detect_objects(self, event=None):
-    if not self.cam_manager.ready():
-      rospy.logwarn("No images received!")
-      return
-
-    img = self.cam_manager.rgb
-    
+  def detect_objects(self, img):    
     # run inference
     print(time.time())
     time_0 = time.time()
@@ -396,17 +424,8 @@ class SAM6DRunner(object):
 #
 #    detections.add_attribute("scores", final_score)
 #    detections.add_attribute("object_ids", torch.zeros_like(final_score))   
-    maskimg = None
-    for idx, score in enumerate(semantic_score.cpu()):
-      if score > 0.5:
-        print(score)
-        print(obj_names[best_template.cpu()[idx] // 42])
-        if maskimg is None:
-          maskimg = detections.masks.cpu().numpy()[idx][0]
-        else:
-          maskimg += detections.masks.cpu().numpy()[idx][0]
-    cv2.imshow("maskimg", maskimg)
-    cv2.waitKey()
+    return detections, semantic_score.cpu(), best_template.cpu()
+
     #save_path = "/home/niko/Documents/data/ycb/sam6d_results/detection_ism"
     #detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
     #detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path+".npz"])
@@ -508,11 +527,6 @@ class SAM6DRunner(object):
 #    return ret_dict, whole_image, whole_pts.reshape(-1, 3), model_points, all_dets
 
 
-
-import rospy
-from sensor_msgs.msg import Image, CameraInfo
-from cv_bridge import CvBridge
-from tf import TransformListener
 
 class CameraManager():
   def __init__(self, ns_rgb, ns_depth=""):
