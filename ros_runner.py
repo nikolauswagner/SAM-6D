@@ -291,7 +291,7 @@ class SAM6DRunner(object):
     for idx, score in enumerate(scores):
       if score > 0.5:
         resp.scores.append(score)
-        resp.labels_text.append(String(obj_names[templates[idx] // 42]))
+        resp.labels_text.append(String(obj_names[templates[idx] // 42][4:]))
         resp.categories.append(String(obj_categories[templates[idx] // 42]))
         masked_depth = np.copy(self.cam_manager.depth)
         masked_depth[masks[idx][0] == 0] = 0
