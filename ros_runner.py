@@ -176,7 +176,7 @@ class SAM6DRunner(object):
 
   def __init__(self, 
                cad_dir="/home/niko/Documents/data/ycb/models/", 
-               template_dir="/home/niko/Documents/data/ycb/templates/",
+               template_dir="/home/lcastor/ros_ws/src/LCASTOR/lcastor_manipulation/sam6d_models/templates/",
                ism_type="fastsam",
                cam_manager=None):
     print("Initialising SAM-6D...")
@@ -193,19 +193,19 @@ class SAM6DRunner(object):
     self.templates = []
 
     # Load models
-    #self.load_model_segmentation()
+    self.load_model_segmentation()
     #self.load_model_pose_estimation()
 
     # Load data
-    #self.load_templates_segmentation()
+    self.load_templates_segmentation()
     #self.load_templates_pose_estimation()
     #self.load_cad_models()
     time_1 = time.time()
     print("Initialising SAM-6D took {:.3f}s.".format(time_1 - time_0))
 
   def run(self, fq=10.0):
-    #rospy.Timer(rospy.Duration(1.0 / fq), self.detect_object)
-    rospy.Timer(rospy.Duration(1.0 / fq), self.convert_rgbd_to_pc2)
+    rospy.Timer(rospy.Duration(1.0 / fq), self.detect_object)
+    #rospy.Timer(rospy.Duration(1.0 / fq), self.convert_rgbd_to_pc2)
 
   def convert_rgbd_to_pc2(self, event=None):
     if not self.cam_manager.ready():
@@ -339,7 +339,7 @@ class SAM6DRunner(object):
     gorilla.solver.load_checkpoint(model=self.model_posest, filename=checkpoint)
 
   def detect_objects(self, event=None):
-    if self.cam_manager.rgb is None:
+    if not self.cam_manager.ready():
       rospy.logwarn("No images received!")
       return
 
