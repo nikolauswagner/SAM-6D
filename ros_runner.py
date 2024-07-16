@@ -83,6 +83,45 @@ obj_names = ["001_soap",
 #             "037_fork",
 #             "038_bowl",
 #             "039_knife"]
+obj_categories = ["cleaning_supplies",
+                  "cleaning_supplies",
+                  "cleaning_supplies",
+                  "cleaning_supplies",
+                  "drinks",
+                  "drinks",
+                  "drinks",
+                  "drinks",
+                  "drinks",
+                  "drinks",
+                  "drinks",
+                  "food",
+                  "food",
+                  "food",
+                  "food",
+                  "food",
+                  "food",
+                  "food",
+                  "decorations",
+                  "fruits",
+                  "fruits",
+                  "fruits",
+                  "fruits",
+                  "fruits",
+                  "fruits",
+                  "fruits",
+                  "fruits",
+                  "snacks",
+                  "snacks",
+                  "snacks",
+                  "snacks",
+                  "snacks",
+                  "snacks",
+                  "dishes",
+                  "dishes",
+                  "dishes",
+                  "dishes",
+                  "dishes",
+                  "dishes"]
 
 rgb_transform = T.Compose([T.ToTensor(),
                           T.Normalize(mean=[0.485, 0.456, 0.406],
@@ -253,6 +292,7 @@ class SAM6DRunner(object):
       if score > 0.5:
         resp.scores.append(score)
         resp.labels_text.append(String(obj_names[templates[idx] // 42]))
+        resp.categories.append(String(obj_categories[templates[idx] // 42]))
         masked_depth = np.copy(self.cam_manager.depth)
         masked_depth[masks[idx][0] == 0] = 0
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
