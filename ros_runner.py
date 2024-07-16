@@ -38,7 +38,7 @@ from Pose_Estimation_Model.utils.data_utils import load_im, get_bbox, get_point_
 import rospy
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
-from tf import TransformListener
+#from tf import TransformListener
 from std_msgs.msg import Header, String
 from sensor_msgs.msg import PointField
 import sensor_msgs.point_cloud2 as pc2
@@ -212,6 +212,9 @@ class SAM6DRunner(object):
     self.ism_type = ism_type
     self.cam_manager = cam_manager
 
+    # Debug
+    self.pub_vis_seg = rospy.Publisher("/object_detector/vis/segmentation", Image, queue_size=10)
+
     #self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/Data/Example/camera.json")
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -242,6 +245,7 @@ class SAM6DRunner(object):
     masks, scores, templates = self.detect_objects(self.cam_manager.rgb)
 
     resp = DetectObjectsResponse()
+    img_mask = None
     for idx, score in enumerate(scores):
       if score > 0.5:
         resp.scores.append(score)
@@ -254,11 +258,17 @@ class SAM6DRunner(object):
         # TODO: remove 0-points
         resp.object_clouds.append(masked_pcl)
 
+        if img_mask is None:
+          img_mask = masks[idx][0]
+        else:
+          img_mask += masks[idx][0]
+
+    color_msg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
+    self.pub_vis_seg.publish(color_msg)
 
     resp.full_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                         self.cam_manager.depth,
                                         self.cam_manager.rgb_info)
-
     return resp
 
 #    maskimg = None
@@ -545,13 +555,13 @@ class CameraManager():
     self.rgb_info = None
     self.depth_info = None
     #rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_img, queue_size=1, buff_size=1)
-    self.sub_rgb = rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_rgb, queue_size=1)
+    self.sub_rgb = rospy.Subscriber("{:s}/image_rect_color".format(ns_rgb), Image, self.cb_rgb, queue_size=1)
     self.sub_rgb_info = rospy.Subscriber("{:s}/camera_info".format(ns_rgb), CameraInfo, self.cb_rgb_info, queue_size=1)
     if ns_depth:
       self.sub_depth = rospy.Subscriber("{:s}/image".format(ns_depth), Image, self.cb_depth, queue_size=1)
       self.sub_depth_info = rospy.Subscriber("{:s}/camera_info".format(ns_depth), CameraInfo, self.cb_depth_info, queue_size=1)
 
-    self.tf_listener = TransformListener()
+    #self.tf_listener = TransformListener()
     self.bridge = CvBridge()
 
   def ready(self):
