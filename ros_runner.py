@@ -39,7 +39,7 @@ import rospy
 from sensor_msgs.msg import Image, CameraInfo
 from cv_bridge import CvBridge
 from tf import TransformListener
-from std_msgs.msg import Header
+from std_msgs.msg import Header, String
 from sensor_msgs.msg import PointField
 import sensor_msgs.point_cloud2 as pc2
 from pick_up_object.srv import DetectObjects, DetectObjectsResponse
@@ -178,6 +178,26 @@ def o3d_to_pc2(open3d_cloud, frame_id="xtion_rgb_optical_frame"):
   return pc2.create_cloud(header, fields, cloud_data)
 
 
+def convert_rgbd_to_pc2(rgb, depth, camera_info):
+  rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d.geometry.Image(rgb),
+                                                            o3d.geometry.Image(depth),
+                                                            convert_rgb_to_intensity=False)
+  intrinsics = o3d.camera.PinholeCameraIntrinsic(width=camera_info.width,
+                                                 height=camera_info.height,
+                                                 fx=camera_info.K[0],
+                                                 fy=camera_info.K[4],
+                                                 cx=camera_info.K[2],
+                                                 cy=camera_info.K[5])
+  pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics)
+  pcd.transform([[1,  0,  0, 0], 
+                 [0, -1,  0, 0], 
+                 [0,  0, -1, 0], 
+                 [0,  0,  0, 1]])
+  pc2_ros = o3d_to_pc2(pcd)
+  print("pc2 done")
+  return pc2_ros
+
+
 class SAM6DRunner(object):
 
   def __init__(self, 
@@ -219,13 +239,25 @@ class SAM6DRunner(object):
       rospy.logwarn("No images received!")
       return
 
-    detections, scores, templates = self.detect_objects(self.cam_manager.rgb)
+    masks, scores, templates = self.detect_objects(self.cam_manager.rgb)
 
     resp = DetectObjectsResponse()
     for idx, score in enumerate(scores):
       if score > 0.5:
         resp.scores.append(score)
-        resp.labels_text.append(obj_names[templates[idx] // 42])
+        resp.labels_text.append(String(obj_names[templates[idx] // 42]))
+        masked_depth = np.zeros_like(self.cam_manager.depth)
+        masked_depth = self.cam_manager.depth[masks[idx] != 0]
+        masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
+                                         masked_depth,
+                                         self.cam_manager.rgb_info)
+        # TODO: remove 0-points
+        resp.object_clouds.append(masked_pcl)
+
+
+    resp.full_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
+                                        self.cam_manager.depth,
+                                        self.cam_manager.rgb_info)
 
     return resp
 
@@ -241,28 +273,6 @@ class SAM6DRunner(object):
 #    cv2.imshow("maskimg", maskimg)
 #    cv2.waitKey()
 
-  def convert_rgbd_to_pc2(self, event=None):
-    if not self.cam_manager.ready():
-      print("Not ready!")
-      return
-
-    rgbd = o3d.geometry.RGBDImage.create_from_color_and_depth(o3d.geometry.Image(self.cam_manager.rgb),
-                                                              o3d.geometry.Image(self.cam_manager.depth),
-                                                              convert_rgb_to_intensity=False)
-    intrinsics = o3d.camera.PinholeCameraIntrinsic(width=self.cam_manager.rgb_info.width,
-                                                   height=self.cam_manager.rgb_info.height,
-                                                   fx=self.cam_manager.rgb_info.K[0],
-                                                   fy=self.cam_manager.rgb_info.K[4],
-                                                   cx=self.cam_manager.rgb_info.K[2],
-                                                   cy=self.cam_manager.rgb_info.K[5])
-    pcd = o3d.geometry.PointCloud.create_from_rgbd_image(rgbd, intrinsics)
-    pcd.transform([[1,  0,  0, 0], 
-                   [0, -1,  0, 0], 
-                   [0,  0, -1, 0], 
-                   [0,  0,  0, 1]])
-    pc2_ros = o3d_to_pc2(pcd)
-    print("pc2 done")
-    return pc2_ros
 
   def load_cad_models(self):
     self.mesh = trimesh.load_mesh(self.cad_dir + "001_chips_can" + "/textured.obj")
@@ -424,7 +434,7 @@ class SAM6DRunner(object):
 #
 #    detections.add_attribute("scores", final_score)
 #    detections.add_attribute("object_ids", torch.zeros_like(final_score))   
-    return detections, semantic_score.cpu(), best_template.cpu()
+    return detections.masks.cpu().numpy(), semantic_score.cpu(), best_template.cpu()
 
     #save_path = "/home/niko/Documents/data/ycb/sam6d_results/detection_ism"
     #detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
