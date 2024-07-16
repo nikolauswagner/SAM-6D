@@ -3,7 +3,7 @@ import os
 import numpy as np
 import torch
 import torchvision.transforms as T
-from PIL import Image
+import PIL.Image
 import open3d as o3d
 #from hydra import initialize, compose
 #from hydra.utils import instantiate
@@ -243,8 +243,8 @@ class SAM6DRunner(object):
     for obj_name in obj_names:
       template_dir = os.path.join(self.template_dir, obj_name)
       for idx in range(num_templates):
-        image = Image.open(os.path.join(template_dir, 'rgb_'+str(idx)+'.png'))
-        mask = Image.open(os.path.join(template_dir, 'mask_'+str(idx)+'.png'))
+        image = PIL.Image.open(os.path.join(template_dir, 'rgb_'+str(idx)+'.png'))
+        mask = PIL.Image.open(os.path.join(template_dir, 'mask_'+str(idx)+'.png'))
         boxes.append(mask.getbbox())
 
         image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
