@@ -90,23 +90,26 @@ def visualize_ism(rgb, detections, save_path="tmp.png"):
     colors = distinctipy.get_colors(len(detections))
     alpha = 0.33
 
-    for mask_idx, det in enumerate(detections):
-      if mask_idx == 3:
-        break
-      mask = rle_to_mask(det["segmentation"])
-      edge = canny(mask)
-      edge = binary_dilation(edge, np.ones((2, 2)))
-      obj_id = det["category_id"]
-      temp_id = obj_id - 1
+    idx_best = np.argmax(detections.scores)
 
-      r = int(255*colors[temp_id][0])
-      g = int(255*colors[temp_id][1])
-      b = int(255*colors[temp_id][2])
-      img[mask, 0] = alpha*r + (1 - alpha)*img[mask, 0]
-      img[mask, 1] = alpha*g + (1 - alpha)*img[mask, 1]
-      img[mask, 2] = alpha*b + (1 - alpha)*img[mask, 2]   
-      img[edge, :] = 255
-    
+#    for mask_idx, det in enumerate(detections):
+#      if mask_idx == 1:
+#        break
+    print(detections.masks[idx_best])
+    mask = rle_to_mask(detections.masks[idx_best])
+    edge = canny(mask)
+    edge = binary_dilation(edge, np.ones((2, 2)))
+    obj_id = detections.object_ids[idx_best] + 1
+    temp_id = obj_id - 1
+
+    r = int(255*colors[temp_id][0])
+    g = int(255*colors[temp_id][1])
+    b = int(255*colors[temp_id][2])
+    img[mask, 0] = alpha*r + (1 - alpha)*img[mask, 0]
+    img[mask, 1] = alpha*g + (1 - alpha)*img[mask, 1]
+    img[mask, 2] = alpha*b + (1 - alpha)*img[mask, 2]   
+    img[edge, :] = 255
+  
     img = Image.fromarray(np.uint8(img))
     img.save(save_path)
     prediction = Image.open(save_path)
@@ -124,14 +127,16 @@ class SAM6DRunner(object):
   def __init__(self, 
                cad_dir="/home/niko/Documents/data/ycb/models/", 
                template_dir="/home/niko/Documents/data/ycb/templates/",
-               ism_type="fastsam"):
+               ism_type="fastsam",
+               cam_manager=None):
     print("Initialising SAM-6D...")
     time_0 = time.time()
     self.template_dir = template_dir
     self.cad_dir = cad_dir
     self.ism_type = ism_type
+    self.cam_manager = cam_manager
 
-    self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/SAM-6D/Data/Example/camera.json")
+    #self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/Data/Example/camera.json")
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     self.meshes = []
@@ -142,52 +147,37 @@ class SAM6DRunner(object):
     self.load_model_pose_estimation()
 
     # Load data
-    self.load_cad_models()
     self.load_templates_segmentation()
     self.load_templates_pose_estimation()
+    self.load_cad_models()
     time_1 = time.time()
     print("Initialising SAM-6D took {:.3f}s.".format(time_1 - time_0))
 
+  def run(self, fq=10.0):
+    rospy.Timer(rospy.Duration(1.0 / fq), self.detect_object)
+
   def load_cad_models(self):
-    self.mesh = trimesh.load_mesh(self.cad_dir + "013_apple" + "/textured.obj")
+    self.mesh = trimesh.load_mesh(self.cad_dir + "001_chips_can" + "/textured.obj")
+    model_points = self.mesh.sample(2048).astype(np.float32) / 1000.0
+    self.model_ism.ref_data["pointcloud"] = torch.tensor(model_points).unsqueeze(0).data.to(self.device)
     return
 
-  def load_templates_segmentation(self, obj_name="001_chips_can"):
-    template_dir = os.path.join(self.template_dir, obj_name)
-    num_templates = len(glob.glob(f"{template_dir}/*.npy"))
+  def load_templates_segmentation(self):
+    print("Loading templates...")
+    num_templates = 42
     boxes, masks, templates = [], [], []
-    for idx in range(num_templates):
-      image = Image.open(os.path.join(template_dir, 'rgb_'+str(idx)+'.png'))
-      mask = Image.open(os.path.join(template_dir, 'mask_'+str(idx)+'.png'))
-      boxes.append(mask.getbbox())
+    for obj_name in obj_names:
+      template_dir = os.path.join(self.template_dir, obj_name)
+      for idx in range(num_templates):
+        image = Image.open(os.path.join(template_dir, 'rgb_'+str(idx)+'.png'))
+        mask = Image.open(os.path.join(template_dir, 'mask_'+str(idx)+'.png'))
+        boxes.append(mask.getbbox())
 
-      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
-      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
-      image = image * mask[:, :, None]
-      templates.append(image)
-      masks.append(mask.unsqueeze(-1))
-
-#    for idx in range(num_templates):
-#      image = Image.open(os.path.join(template_dir + "/../002_master_chef_can", 'rgb_'+str(idx)+'.png'))
-#      mask = Image.open(os.path.join(template_dir + "/../002_master_chef_can", 'mask_'+str(idx)+'.png'))
-#      boxes.append(mask.getbbox())
-#
-#      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
-#      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
-#      image = image * mask[:, :, None]
-#      templates.append(image)
-#      masks.append(mask.unsqueeze(-1))
-#
-#    for idx in range(num_templates):
-#      image = Image.open(os.path.join(template_dir + "/../003_cracker_box", 'rgb_'+str(idx)+'.png'))
-#      mask = Image.open(os.path.join(template_dir + "/../003_cracker_box", 'mask_'+str(idx)+'.png'))
-#      boxes.append(mask.getbbox())
-#
-#      image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
-#      mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
-#      image = image * mask[:, :, None]
-#      templates.append(image)
-#      masks.append(mask.unsqueeze(-1))
+        image = torch.from_numpy(np.array(image.convert("RGB")) / 255).float()
+        mask = torch.from_numpy(np.array(mask.convert("L")) / 255).float()
+        image = image * mask[:, :, None]
+        templates.append(image)
+        masks.append(mask.unsqueeze(-1))
 
     templates = torch.stack(templates).permute(0, 3, 1, 2)
     masks = torch.stack(masks).permute(0, 3, 1, 2)
@@ -274,7 +264,12 @@ class SAM6DRunner(object):
     checkpoint = "./Pose_Estimation_Model/checkpoints/sam-6d-pem-base.pth"
     gorilla.solver.load_checkpoint(model=self.model_posest, filename=checkpoint)
 
-  def detect_object(self, img):
+  def detect_objects(self):
+    if self.cam_manager.rgb is None:
+      rospy.logwarn("No images received!")
+      return
+
+    img = self.cam_manager.rgb
     
     # run inference
     print(time.time())
@@ -286,51 +281,66 @@ class SAM6DRunner(object):
     print("Took: {:.3f}".format(time_1 - time_0))
 
     # matching descriptors
-    (
-        idx_selected_proposals,
-        pred_idx_objects,
-        semantic_score,
-        best_template,
-    ) = self.model_ism.compute_semantic_score(query_decriptors)
+    print("Matching")
+    (idx_selected_proposals,
+     pred_idx_objects,
+     semantic_score,
+     best_template) = self.model_ism.compute_semantic_score(query_decriptors)
+    print(idx_selected_proposals)
     print(pred_idx_objects)
+    print(semantic_score)
+    print(best_template)
 
     # Update detection
+    print("Filtering")
     detections.filter(idx_selected_proposals)
-    query_appe_descriptors = query_appe_descriptors[idx_selected_proposals, :]
-
-    # compute the appearance score
-    appe_scores, ref_aux_descriptor = self.model_ism.compute_appearance_score(best_template, pred_idx_objects, query_appe_descriptors)
-
-    # compute the geometric score
-    depth_path = "/home/niko/Documents/git/SAM-6D/SAM-6D/Data/Example/depth.png"
-    batch = batch_input_data(depth_path, self.cam_info, self.device)
-    template_poses = get_obj_poses_from_template_level(level=2, pose_distribution="all")
-    template_poses[:, :3, 3] *= 0.4
-    poses = torch.tensor(template_poses).to(torch.float32).to(self.device)
-    self.model_ism.ref_data["poses"] = poses[load_index_level_in_level2(0, "all"), :, :]
-
-    model_points = self.mesh.sample(2048).astype(np.float32) / 1000.0
-    self.model_ism.ref_data["pointcloud"] = torch.tensor(model_points).unsqueeze(0).data.to(self.device)
- 
-    image_uv = self.model_ism.project_template_to_image(best_template, pred_idx_objects, batch, detections.masks)
-
-    geometric_score, visible_ratio = self.model_ism.compute_geometric_score(
-        image_uv, detections, query_appe_descriptors, ref_aux_descriptor, visible_thred=self.model_ism.visible_thred
-        )
-
-    # final score
-    final_score = (semantic_score + appe_scores + geometric_score*visible_ratio) / (1 + 1 + visible_ratio)
-
-    detections.add_attribute("scores", final_score)
-    detections.add_attribute("object_ids", torch.zeros_like(final_score))   
-    detections.to_numpy()
-    save_path = "/home/niko/Documents/data/ycb/sam6d_results/detection_ism"
-    detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
-    self.detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path+".npz"])
-
-    #save_json_bop23(save_path+".json", detections)
-    vis_img = visualize_ism(img, self.detections, "/home/niko/Documents/data/ycb/sam6d_results/vis_ism.png")
+#    query_appe_descriptors = query_appe_descriptors[idx_selected_proposals, :]
+#
+#    # compute the appearance score
+#    print("Appearance score")
+#    appe_scores, ref_aux_descriptor = self.model_ism.compute_appearance_score(best_template, pred_idx_objects, query_appe_descriptors)
+#
+#    # compute the geometric score
+#    print("Geometric score")
+#    depth_path = "/home/niko/Documents/git/SAM-6D/Data/Example/depth.png"
+#    batch = batch_input_data(depth_path, self.cam_info, self.device)
+#    template_poses = get_obj_poses_from_template_level(level=2, pose_distribution="all")
+#    template_poses[:, :3, 3] *= 0.4
+#    poses = torch.tensor(template_poses).to(torch.float32).to(self.device)
+#    self.model_ism.ref_data["poses"] = poses[load_index_level_in_level2(0, "all"), :, :]
+# 
+#    image_uv = self.model_ism.project_template_to_image(best_template, pred_idx_objects, batch, detections.masks)
+#
+#    geometric_score, visible_ratio = self.model_ism.compute_geometric_score(
+#        image_uv, detections, query_appe_descriptors, ref_aux_descriptor, visible_thred=self.model_ism.visible_thred
+#        )
+#
+#    # final score
+#    print("Final score")
+#    final_score = (semantic_score + appe_scores + geometric_score*visible_ratio) / (1 + 1 + visible_ratio)
+#    print(final_score)
+#
+#    detections.add_attribute("scores", final_score)
+#    detections.add_attribute("object_ids", torch.zeros_like(final_score))   
+    maskimg = None
+    for idx, score in enumerate(semantic_score.cpu()):
+      if score > 0.5:
+        print(score)
+        print(obj_names[best_template.cpu()[idx] // 42])
+        if maskimg is None:
+          maskimg = detections.masks.cpu().numpy()[idx][0]
+        else:
+          maskimg += detections.masks.cpu().numpy()[idx][0]
+    cv2.imshow("maskimg", maskimg)
+    cv2.waitKey()
+    #save_path = "/home/niko/Documents/data/ycb/sam6d_results/detection_ism"
+    #detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
+    #detections = convert_npz_to_json(idx=0, list_npz_paths=[save_path+".npz"])
+#
+#    save_json_bop23(save_path+".json", self.detections)
+#    vis_img = visualize_ism(img, detections, "/home/niko/Documents/data/ycb/sam6d_results/vis_ism.png")
     #vis_img.save("/home/niko/Documents/data/ycb/sam6d_results//vis_ism.png")
+    print("\n\n\n")
 
   def detect_pose(self, det_score_thresh=0.2):
     dets = []
@@ -419,9 +429,54 @@ class SAM6DRunner(object):
 #    return ret_dict, whole_image, whole_pts.reshape(-1, 3), model_points, all_dets
 
 
+
+import rospy
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+from tf import TransformListener
+
+class CameraManager():
+  def __init__(self, ns_rgb, ns_depth=""):
+    self.rgb = None
+    self.depth = None
+    #rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_img, queue_size=1, buff_size=1)
+    self.sub_rgb = rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_rgb, queue_size=1)
+    self.sub_rgb_info = rospy.Subscriber("{:s}/camera_info".format(ns_rgb), CameraInfo, self.cb_rgb_info, queue_size=1)
+    if ns_depth:
+      self.sub_depth = rospy.Subscriber("{:s}/image".format(ns_depth), Image, self.cb_depth, queue_size=1)
+      self.sub_depth_info = rospy.Subscriber("{:s}/camera_info".format(ns_depth), CameraInfo, self.cb_depth_info, queue_size=1)
+
+    self.tf_listener = TransformListener()
+    self.bridge = CvBridge()
+
+  def cb_rgb(self, msg):
+    rgb = msg
+    rgb = self.bridge.imgmsg_to_cv2(rgb, rgb.encoding)
+    self.rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
+    #cv2.imshow("rgb", self.rgb)
+    #cv2.waitKey()
+
+  def cb_rgb_info(self, data):
+    self.rgb_info = data
+
+  def cb_depth(self, img_msg):
+    self.depth_img = self.bridge.imgmsg_to_cv2(img_msg, img_msg.encoding)
+    #cv2.imshow("depth", self.depth_img/10)
+    #cv2.waitKey()
+
+  def cb_depth_info(self, data):
+    self.cam_depth_info = data
+
+
 if __name__ == '__main__':
-  s6d = SAM6DRunner()
-  img = Image.open("/home/niko/Documents/data/robocup/shelf.png").convert("RGB")
-  while True:
-    s6d.detect_object(img)
+  rospy.init_node("sam6d")
+  cm = CameraManager("/xtion/rgb", "/xtion/depth_registered")
+  s6d = SAM6DRunner(cam_manager=cm)
+  img = Image.open("/home/niko/Documents/data/robocup/table.png").convert("RGB")
+  
+  rospy.spin()
+  while not rospy.is_shutdown():
+    if cm.rgb is not None:
+      s6d.detect_object(cm.rgb)
+
   print("All done")
