@@ -296,8 +296,12 @@ class SAM6DRunner(object):
         resp.scores.append(score)
         resp.labels_text.append(String(name))
         resp.categories.append(String(category))
+
+        # Extract individual object pointclouds
         masked_depth = np.copy(self.cam_manager.depth)
         masked_depth[mask == 0] = 0
+        med_depth = np.median(np.nonzero(masked_depth))
+        masked_depth[np.abs(masked_depth - med_depth) > 70] = 0
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
@@ -422,8 +426,8 @@ class SAM6DRunner(object):
     if self.ism_type == "fastsam":
       with hydra.initialize(version_base=None, config_path="Instance_Segmentation_Model/configs/model"):
         self.cfg_ism.model = hydra.compose(config_name='ISM_fastsam.yaml')
-    #else:
-    #  rospy.logerr("ISM model not supported!")
+    else:
+      rospy.logerr("ISM model not supported!")
 
     self.model_ism = hydra.utils.instantiate(self.cfg_ism.model)
 
