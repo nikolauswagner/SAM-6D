@@ -255,7 +255,6 @@ class SAM6DRunner(object):
     self.pub_vis_pcl = rospy.Publisher("/object_detector/vis/pcl", PointCloud2, queue_size=10)
     self.pub_vis_bbox = rospy.Publisher("/object_detector/vis/bbox", Image, queue_size=10)
 
-    #self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/Data/Example/camera.json")
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     self.meshes = []
@@ -620,17 +619,21 @@ class CameraManager():
                 self.depth_info is None)
 
   def cb_rgb(self, msg):
+    rospy.loginfo("CB RGB")
     rgb = msg
     rgb = self.bridge.imgmsg_to_cv2(rgb, rgb.encoding)
     #self.rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
 
   def cb_rgb_info(self, data):
+    rospy.loginfo("CB RGB info")
     self.rgb_info = data
 
   def cb_depth(self, img_msg):
+    rospy.loginfo("CB Depth")
     self.depth = self.bridge.imgmsg_to_cv2(img_msg, img_msg.encoding)
 
   def cb_depth_info(self, data):
+    rospy.loginfo("CB Depth info")
     self.depth_info = data
 
 
