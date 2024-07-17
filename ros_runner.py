@@ -638,35 +638,6 @@ if __name__ == '__main__':
   rospy.init_node("sam6d")
   cm = CameraManager("/xtion/rgb", "/xtion/depth_registered")
   s6d = SAM6DRunner(cam_manager=cm)
-  maskimg = None
-  img_idx = np.zeros_like(img, dtype=np.uint8)
-  maskidx = 1
-
-  img_bbox = img.copy()
-  for idx, score in enumerate(scores):
-    if score > 0.6:
-      print(score)
-      name = obj_names[templates[idx] // 42][4:]
-      print(name)
-      if maskimg is None:
-        maskimg = masks[idx][0]
-      else:
-        maskimg += masks[idx][0]
-
-      img_idx[masks[idx][0] != 0] = maskidx * 30
-      mask = masks[idx][0].copy().astype(np.uint8)
-      contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-      x, y, w, h = cv2.boundingRect(contours[0][0])
-      cv2.rectangle(img_bbox, (x, y), (x+w, y+h), (0,0,255), 2)
-      cv2.putText(img_bbox, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2, 2)
-
-      cv2.imshow("bbox", img_bbox)
-      cv2.imshow("mask", masks[idx][0])
-      cv2.waitKey()
-      maskidx += 1
-
-  cv2.applyColorMap(img_idx, cv2.COLORMAP_JET)
-  cv2.imshow("maskimg", img_idx)
-  cv2.waitKey()
-  #rospy.spin()
+  s6d.run()
+  rospy.spin()
   print("All done")
