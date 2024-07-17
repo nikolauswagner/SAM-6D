@@ -10,7 +10,7 @@ import open3d as o3d
 import hydra
 import trimesh
 import time
-import argparse
+import argparse#
 import glob
 from omegaconf import OmegaConf
 import torch
@@ -35,14 +35,13 @@ from Instance_Segmentation_Model.utils.inout import load_json, save_json_bop23
 from Pose_Estimation_Model.utils.data_utils import load_im, get_bbox, get_point_cloud_from_depth, get_resize_rgb_choose
 
 # ROS
-import rospy
-from sensor_msgs.msg import Image, CameraInfo
-from cv_bridge import CvBridge
-#from tf import TransformListener
-from std_msgs.msg import Header, String
-from sensor_msgs.msg import PointCloud2, PointField
-import sensor_msgs.point_cloud2 as pc2
-from pick_up_object.srv import DetectObjects, DetectObjectsResponse
+#import rospy
+#from sensor_msgs.msg import Image, CameraInfo
+#from cv_bridge import CvBridge
+#from std_msgs.msg import Header, String
+#from sensor_msgs.msg import PointCloud2, PointField
+#import sensor_msgs.point_cloud2 as pc2
+#from pick_up_object.srv import DetectObjects, DetectObjectsResponse
 
 obj_names = ["001_soap",
              "002_dishwasher_tab",
@@ -58,25 +57,25 @@ obj_names = ["001_soap",
              "012_cornflakes",
              "013_pea_soup",
              "014_curry",
-             "015_pancake_mix"]
-#             "016_hagelslag",
-#             "017_sausages",
-#             "018_mayonaise",
-#             "019_candle",
-#             "020_pear",
-#             "021_plum",
-#             "022_peach",
-#             "023_lemon",
-#             "024_orange",
-#             "025_strawberry",
-#             "026_banana",
-#             "027_apple",
-#             "028_stroopwafel",
-#             "029_candy",
-#             "030_liquorice",
-#             "031_crisps",
-#             "032_pringles",
-#             "033_tictac",
+             "015_pancake_mix",
+             "016_hagelslag",
+             "017_sausages",
+             "018_mayonaise",
+             "019_candle",
+             "020_pear",
+             "021_plum",
+             "022_peach",
+             "023_lemon",
+             "024_orange",
+             "025_strawberry",
+             "026_banana",
+             "027_apple",
+             "028_stroopwafel",
+             "029_candy",
+             "030_liquorice",
+             "031_crisps",
+             "032_pringles",
+             "033_tictac"]
 #             "034_spoon",
 #             "035_plate",
 #             "036_cup",
@@ -233,7 +232,6 @@ def convert_rgbd_to_pc2(rgb, depth, camera_info):
 #                 [0,  0, -1, 0], 
 #                 [0,  0,  0, 1]])
   pc2_ros = o3d_to_pc2(pcd)
-  print("pc2 done")
   return pc2_ros
 
 
@@ -255,6 +253,7 @@ class SAM6DRunner(object):
     self.pub_vis_seg = rospy.Publisher("/object_detector/vis/segmentation", Image, queue_size=10)
     self.pub_vis_idx = rospy.Publisher("/object_detector/vis/index", Image, queue_size=10)
     self.pub_vis_pcl = rospy.Publisher("/object_detector/vis/pcl", PointCloud2, queue_size=10)
+    self.pub_vis_bbox = rospy.Publisher("/object_detector/vis/bbox", Image, queue_size=10)
 
     #self.cam_info = load_json("/home/niko/Documents/git/SAM-6D/Data/Example/camera.json")
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -288,13 +287,18 @@ class SAM6DRunner(object):
     resp = DetectObjectsResponse()
     img_mask = np.zeros_like(self.cam_manager.rgb)
     img_idx = np.zeros_like(self.cam_manager.depth, dtype=np.uint8)
+    img_bbox = self.cam_manager.rgb.copy()
     for idx, score in enumerate(scores):
-      if score > 0.5:
+      if score > 0.55:
+        name = obj_names[templates[idx] // 42][4:]
+        category = obj_categories[templates[idx] // 42]
+        mask = masks[idx][0].copy().astype(np.uint8)
+
         resp.scores.append(score)
-        resp.labels_text.append(String(obj_names[templates[idx] // 42][4:]))
-        resp.categories.append(String(obj_categories[templates[idx] // 42]))
+        resp.labels_text.append(String(name))
+        resp.categories.append(String(category))
         masked_depth = np.copy(self.cam_manager.depth)
-        masked_depth[masks[idx][0] == 0] = 0
+        masked_depth[mask == 0] = 0
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
@@ -302,20 +306,26 @@ class SAM6DRunner(object):
         resp.object_clouds.append(masked_pcl)
         self.pub_vis_pcl.publish(masked_pcl)
 
-        img_mask[masks[idx][0] != 0] = self.cam_manager.rgb[masks[idx][0] != 0]
-        img_idx[masks[idx][0] != 0] = 10 + idx * 10
+        img_mask[mask != 0] = self.cam_manager.rgb[mask != 0]
+        img_idx[mask != 0] = 10 + idx * 10
+
+        contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+        x, y, w, h = cv2.boundingRect(contours[0][0])
+        cv2.rectangle(img_bbox, (x, y), (x+w, y+h), (0,0,255), 2)
+        cv2.putText(img_bbox, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2, 2)
 
     msg_seg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
     self.pub_vis_seg.publish(msg_seg)
     msg_idx = cv2.applyColorMap(img_idx, cv2.COLORMAP_JET)
     msg_idx = self.cam_manager.bridge.cv2_to_imgmsg(msg_idx, encoding="bgr8")
     self.pub_vis_idx.publish(msg_idx)
+    msg_bbox = self.cam_manager.bridge.cv2_to_imgmsg(img_bbox, encoding="bgr8")
+    self.pub_vis_bbox.publish(msg_bbox)
 
     resp.full_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                         self.cam_manager.depth,
                                         self.cam_manager.rgb_info)
     return resp
-
 #    maskimg = None
 #    for idx, score in enumerate(scores):
 #      if score > 0.5:
@@ -327,7 +337,6 @@ class SAM6DRunner(object):
 #          maskimg += detections.masks.cpu().numpy()[idx][0]
 #    cv2.imshow("maskimg", maskimg)
 #    cv2.waitKey()
-
 
   def load_cad_models(self):
     self.mesh = trimesh.load_mesh(self.cad_dir + "001_chips_can" + "/textured.obj")
@@ -461,11 +470,11 @@ class SAM6DRunner(object):
     # Update detection
     print("Filtering")
     detections.filter(idx_selected_proposals)
-#    query_appe_descriptors = query_appe_descriptors[idx_selected_proposals, :]
-#
-#    # compute the appearance score
-#    print("Appearance score")
-#    appe_scores, ref_aux_descriptor = self.model_ism.compute_appearance_score(best_template, pred_idx_objects, query_appe_descriptors)
+    query_appe_descriptors = query_appe_descriptors[idx_selected_proposals, :]
+
+    # compute the appearance score
+    print("Appearance score")
+    appe_scores, ref_aux_descriptor = self.model_ism.compute_appearance_score(best_template, pred_idx_objects, query_appe_descriptors)
 #
 #    # compute the geometric score
 #    print("Geometric score")
@@ -488,8 +497,9 @@ class SAM6DRunner(object):
 #    print(final_score)
 #
 #    detections.add_attribute("scores", final_score)
-#    detections.add_attribute("object_ids", torch.zeros_like(final_score))   
-    return detections.masks.cpu().numpy(), semantic_score.cpu(), best_template.cpu()
+#    detections.add_attribute("object_ids", torch.zeros_like(final_score))
+    final_score = (semantic_score + appe_scores) / 2
+    return detections.masks.cpu().numpy(), final_score.cpu(), best_template.cpu()
 
     #save_path = "/home/niko/Documents/data/ycb/sam6d_results/detection_ism"
     #detections.save_to_file(0, 0, 0, save_path, "Custom", return_results=False)
@@ -499,10 +509,6 @@ class SAM6DRunner(object):
 #    vis_img = visualize_ism(img, detections, "/home/niko/Documents/data/ycb/sam6d_results/vis_ism.png")
     #vis_img.save("/home/niko/Documents/data/ycb/sam6d_results//vis_ism.png")
     
-    # Publish
-
-
-
     print("\n\n\n")
 
   def detect_pose(self, det_score_thresh=0.2):
@@ -592,21 +598,19 @@ class SAM6DRunner(object):
 #    return ret_dict, whole_image, whole_pts.reshape(-1, 3), model_points, all_dets
 
 
-
 class CameraManager():
+
   def __init__(self, ns_rgb, ns_depth=""):
     self.rgb = None
     self.depth = None
     self.rgb_info = None
     self.depth_info = None
-    #rospy.Subscriber("{:s}/image_raw".format(ns_rgb), Image, self.cb_img, queue_size=1, buff_size=1)
     self.sub_rgb = rospy.Subscriber("{:s}/image_rect_color".format(ns_rgb), Image, self.cb_rgb, queue_size=1)
     self.sub_rgb_info = rospy.Subscriber("{:s}/camera_info".format(ns_rgb), CameraInfo, self.cb_rgb_info, queue_size=1)
     if ns_depth:
       self.sub_depth = rospy.Subscriber("{:s}/image".format(ns_depth), Image, self.cb_depth, queue_size=1)
       self.sub_depth_info = rospy.Subscriber("{:s}/camera_info".format(ns_depth), CameraInfo, self.cb_depth_info, queue_size=1)
 
-    #self.tf_listener = TransformListener()
     self.bridge = CvBridge()
 
   def ready(self):
@@ -618,17 +622,13 @@ class CameraManager():
   def cb_rgb(self, msg):
     rgb = msg
     rgb = self.bridge.imgmsg_to_cv2(rgb, rgb.encoding)
-    self.rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
-    #cv2.imshow("rgb", self.rgb)
-    #cv2.waitKey()
+    #self.rgb = cv2.cvtColor(rgb, cv2.COLOR_BGR2RGB)
 
   def cb_rgb_info(self, data):
     self.rgb_info = data
 
   def cb_depth(self, img_msg):
     self.depth = self.bridge.imgmsg_to_cv2(img_msg, img_msg.encoding)
-    #cv2.imshow("depth", self.depth_img/10)
-    #cv2.waitKey()
 
   def cb_depth_info(self, data):
     self.depth_info = data
@@ -638,12 +638,35 @@ if __name__ == '__main__':
   rospy.init_node("sam6d")
   cm = CameraManager("/xtion/rgb", "/xtion/depth_registered")
   s6d = SAM6DRunner(cam_manager=cm)
-  s6d.run()
-  #img = Image.open("/home/niko/Documents/data/robocup/table.png").convert("RGB")
-  
-  rospy.spin()
-  #while not rospy.is_shutdown():
-    #if cm.rgb is not None:
-    #  s6d.detect_object(cm.rgb)
+  maskimg = None
+  img_idx = np.zeros_like(img, dtype=np.uint8)
+  maskidx = 1
 
+  img_bbox = img.copy()
+  for idx, score in enumerate(scores):
+    if score > 0.6:
+      print(score)
+      name = obj_names[templates[idx] // 42][4:]
+      print(name)
+      if maskimg is None:
+        maskimg = masks[idx][0]
+      else:
+        maskimg += masks[idx][0]
+
+      img_idx[masks[idx][0] != 0] = maskidx * 30
+      mask = masks[idx][0].copy().astype(np.uint8)
+      contours = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+      x, y, w, h = cv2.boundingRect(contours[0][0])
+      cv2.rectangle(img_bbox, (x, y), (x+w, y+h), (0,0,255), 2)
+      cv2.putText(img_bbox, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2, 2)
+
+      cv2.imshow("bbox", img_bbox)
+      cv2.imshow("mask", masks[idx][0])
+      cv2.waitKey()
+      maskidx += 1
+
+  cv2.applyColorMap(img_idx, cv2.COLORMAP_JET)
+  cv2.imshow("maskimg", img_idx)
+  cv2.waitKey()
+  #rospy.spin()
   print("All done")
