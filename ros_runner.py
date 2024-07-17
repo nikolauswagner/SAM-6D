@@ -35,13 +35,13 @@ from Instance_Segmentation_Model.utils.inout import load_json, save_json_bop23
 from Pose_Estimation_Model.utils.data_utils import load_im, get_bbox, get_point_cloud_from_depth, get_resize_rgb_choose
 
 # ROS
-#import rospy
-#from sensor_msgs.msg import Image, CameraInfo
-#from cv_bridge import CvBridge
-#from std_msgs.msg import Header, String
-#from sensor_msgs.msg import PointCloud2, PointField
-#import sensor_msgs.point_cloud2 as pc2
-#from pick_up_object.srv import DetectObjects, DetectObjectsResponse
+import rospy
+from sensor_msgs.msg import Image, CameraInfo
+from cv_bridge import CvBridge
+from std_msgs.msg import Header, String
+from sensor_msgs.msg import PointCloud2, PointField
+import sensor_msgs.point_cloud2 as pc2
+from pick_up_object.srv import DetectObjects, DetectObjectsResponse
 
 obj_names = ["001_soap",
              "002_dishwasher_tab",
