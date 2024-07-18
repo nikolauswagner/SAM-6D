@@ -301,7 +301,7 @@ class SAM6DRunner(object):
         masked_depth = np.copy(self.cam_manager.depth)
         masked_depth[mask == 0] = 0
         med_depth = np.median(np.nonzero(masked_depth))
-        masked_depth[np.abs(masked_depth - med_depth) > 70] = 0
+        masked_depth[np.abs(masked_depth - med_depth) > 100] = 0
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
@@ -317,6 +317,7 @@ class SAM6DRunner(object):
         cv2.rectangle(img_bbox, (x, y), (x+w, y+h), (0,0,255), 2)
         cv2.putText(img_bbox, name, (x, y-5), cv2.FONT_HERSHEY_SIMPLEX, 1, (0,0,255), 2, 2)
 
+    # Publish visualisation
     msg_seg = self.cam_manager.bridge.cv2_to_imgmsg(img_mask, encoding="bgr8")
     self.pub_vis_seg.publish(msg_seg)
     msg_idx = cv2.applyColorMap(img_idx, cv2.COLORMAP_JET)
@@ -625,7 +626,7 @@ class CameraManager():
   def cb_rgb(self, msg):
     rgb = msg
     self.rgb = self.bridge.imgmsg_to_cv2(rgb, rgb.encoding)
-    #self.rgb = cv2.cvtColor(self.rgb, cv2.COLOR_BGR2RGB)
+    self.rgb = cv2.cvtColor(self.rgb, cv2.COLOR_BGR2RGB)
 
   def cb_rgb_info(self, data):
     self.rgb_info = data
