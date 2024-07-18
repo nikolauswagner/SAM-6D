@@ -179,11 +179,9 @@ def visualize_ism(rgb, detections, save_path="tmp.png"):
 
 
 def o3d_to_pc2(open3d_cloud, frame_id="xtion_rgb_optical_frame"):
-  FIELDS_XYZ = [
-    PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
-    PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
-    PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1),
-  ]
+  FIELDS_XYZ = [PointField(name='x', offset=0, datatype=PointField.FLOAT32, count=1),
+                PointField(name='y', offset=4, datatype=PointField.FLOAT32, count=1),
+                PointField(name='z', offset=8, datatype=PointField.FLOAT32, count=1)]
   FIELDS_XYZRGB = FIELDS_XYZ + [PointField(name='rgb', offset=12, datatype=PointField.UINT32, count=1)]
 
   # Bit operations
@@ -300,12 +298,12 @@ class SAM6DRunner(object):
         # Extract individual object pointclouds
         masked_depth = np.copy(self.cam_manager.depth)
         masked_depth[mask == 0] = 0
-        med_depth = np.median(np.nonzero(masked_depth))
+        med_depth = np.median(masked_depth[np.nonzero(masked_depth)])
         masked_depth[np.abs(masked_depth - med_depth) > 100] = 0
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
-        # TODO: remove 0-points
+        # TODO: remove 0-points? Prob not necessary
         resp.object_clouds.append(masked_pcl)
         self.pub_vis_pcl.publish(masked_pcl)
 
@@ -330,17 +328,6 @@ class SAM6DRunner(object):
                                         self.cam_manager.depth,
                                         self.cam_manager.rgb_info)
     return resp
-#    maskimg = None
-#    for idx, score in enumerate(scores):
-#      if score > 0.5:
-#        print(score)
-#        print(obj_names[templates[idx] // 42])
-#        if maskimg is None:
-#          maskimg = detections.masks.cpu().numpy()[idx][0]
-#        else:
-#          maskimg += detections.masks.cpu().numpy()[idx][0]
-#    cv2.imshow("maskimg", maskimg)
-#    cv2.waitKey()
 
   def load_cad_models(self):
     self.mesh = trimesh.load_mesh(self.cad_dir + "001_chips_can" + "/textured.obj")
