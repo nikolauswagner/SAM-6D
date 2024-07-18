@@ -297,12 +297,12 @@ class SAM6DRunner(object):
 
         # Extract individual object pointclouds
         masked_depth = np.copy(self.cam_manager.depth)
-        cv2.imshow("depth", masked_depth)
+        cv2.imshow("depth", 10*masked_depth)
         masked_depth[mask == 0] = 0
-        cv2.imshow("masked_depth", masked_depth)
+        cv2.imshow("masked_depth", 10*masked_depth)
         med_depth = np.median(masked_depth[np.nonzero(masked_depth)])
         masked_depth[np.abs(masked_depth - med_depth) > 100] = 0
-        cv2.imshow("filtered_depth", masked_depth)
+        cv2.imshow("filtered_depth", 10*masked_depth)
         masked_pcl = convert_rgbd_to_pc2(self.cam_manager.rgb,
                                          masked_depth,
                                          self.cam_manager.rgb_info)
