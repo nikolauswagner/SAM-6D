@@ -5,3 +5,4 @@
 **/checkpoints/
 **/outputs/
 **/*.egg-info/
+Instance_Segmentation_Model/checkpoints
